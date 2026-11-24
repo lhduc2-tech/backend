@@ -1,6 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.config.S3Properties;
+import com.example.backend.service.RedisClientService;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,24 +16,28 @@ public class HealthController {
     private final JdbcTemplate jdbcTemplate;
     private final S3Client s3Client;
     private final S3Properties s3Properties;
+    private final RedisClientService redisClientService;
 
-    public HealthController(JdbcTemplate jdbcTemplate, S3Client s3Client, S3Properties s3Properties) {
+    public HealthController(JdbcTemplate jdbcTemplate, S3Client s3Client, S3Properties s3Properties, RedisClientService redisClientService) {
         this.jdbcTemplate = jdbcTemplate;
         this.s3Client = s3Client;
         this.s3Properties = s3Properties;
+        this.redisClientService = redisClientService;
     }
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         boolean dbUp = isDatabaseUp();
         boolean s3Up = isS3Up();
-        boolean allUp = dbUp && s3Up;
+        boolean redisUp = isRedisUp();
+        boolean allUp = dbUp && s3Up && redisUp;
 
         HttpStatus status = allUp ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
         return ResponseEntity.status(status).body(Map.of(
                 "status", allUp ? "ok" : "error",
                 "database", dbUp ? "up" : "down",
-                "s3", s3Up ? "up" : "down"
+                "s3", s3Up ? "up" : "down",
+                "redis", redisUp ? "up" : "down"
         ));
     }
 
@@ -49,6 +54,14 @@ public class HealthController {
         try {
             var response = s3Client.headBucket(builder -> builder.bucket(s3Properties.bucketName()));
             return response.sdkHttpResponse().isSuccessful();
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private boolean isRedisUp() {
+        try {
+            return redisClientService.ping();
         } catch (Exception ex) {
             return false;
         }
